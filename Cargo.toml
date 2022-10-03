@@ -1,0 +1,11 @@
+[package]
+edition = "2021"
+name = "blocked-vec"
+version = "0.1.0"
+
+[features]
+default = ["std"]
+std = ["dep:page_size"]
+
+[dependencies]
+page_size = {version = "0.4", optional = true}
