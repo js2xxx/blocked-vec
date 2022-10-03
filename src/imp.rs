@@ -1,5 +1,11 @@
 use alloc::{vec, vec::Vec};
-use core::{alloc::Layout, cmp, mem};
+use core::{
+    alloc::Layout,
+    cmp,
+    iter::FusedIterator,
+    mem::{self, MaybeUninit},
+    slice,
+};
 
 use crate::{IoSlice, IoSliceMut, SeekFrom};
 
@@ -570,6 +576,28 @@ impl BlockedVec {
             self.truncate(new_len);
         }
     }
+
+    /// Returns the iterator of blocks (i.e. byte slices).
+    #[inline]
+    pub fn iter(&self) -> BlockIter<'_> {
+        BlockIter {
+            blocks: &self.blocks,
+        }
+    }
+
+    /// Returns the mutable iterator of blocks (i.e. byte slices).
+    #[inline]
+    pub fn iter_mut(&mut self) -> BlockIterMut<'_> {
+        BlockIterMut {
+            blocks: self.blocks.iter_mut(),
+        }
+    }
+
+    /// Returns every byte of this [`BlockedVec`].
+    #[inline]
+    pub fn bytes(&self) -> impl Iterator<Item = u8> + Clone + core::fmt::Debug + '_ {
+        self.iter().flatten().copied()
+    }
 }
 
 #[cfg(feature = "std")]
@@ -619,6 +647,52 @@ impl std::io::Write for BlockedVec {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct BlockIter<'a> {
+    blocks: &'a [Block],
+}
+
+impl<'a> Iterator for BlockIter<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (ret, next) = self.blocks.split_first()?;
+        self.blocks = next;
+        // SAFETY: bytes are always valid.
+        Some(unsafe { MaybeUninit::slice_assume_init_ref(ret.as_slice()) })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.blocks.len(), Some(self.blocks.len()))
+    }
+}
+
+impl ExactSizeIterator for BlockIter<'_> {}
+
+impl FusedIterator for BlockIter<'_> {}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct BlockIterMut<'a> {
+    blocks: slice::IterMut<'a, Block>,
+}
+
+impl<'a> Iterator for BlockIterMut<'a> {
+    type Item = &'a mut [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ret = self.blocks.next()?;
+        // SAFETY: bytes are always valid.
+        Some(unsafe { MaybeUninit::slice_assume_init_mut(ret.as_mut_slice()) })
+    }
+}
+
+impl ExactSizeIterator for BlockIterMut<'_> {}
+
+impl FusedIterator for BlockIterMut<'_> {}
 
 #[cfg(test)]
 mod tests {

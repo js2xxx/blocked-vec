@@ -66,13 +66,13 @@ impl Block {
         self.layout.size()
     }
 
-    fn as_slice(&self) -> &[MaybeUninit<u8>] {
+    pub fn as_slice(&self) -> &[MaybeUninit<u8>] {
         assert!(self.len <= self.capacity());
         let base = self.ptr.as_ptr() as *const MaybeUninit<u8>;
         unsafe { slice::from_raw_parts(base, self.len) }
     }
 
-    fn as_mut_slice(&mut self) -> &mut [MaybeUninit<u8>] {
+    pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<u8>] {
         assert!(self.len <= self.capacity());
         let base = self.ptr.as_ptr() as *mut MaybeUninit<u8>;
         unsafe { slice::from_raw_parts_mut(base, self.len) }
