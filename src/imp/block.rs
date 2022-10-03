@@ -1,3 +1,4 @@
+use alloc::alloc::Global;
 use core::{
     alloc::{Allocator, Layout},
     fmt,
@@ -6,8 +7,6 @@ use core::{
     ptr::NonNull,
     slice,
 };
-
-use alloc::alloc::Global;
 
 use crate::{IoSlice, IoSliceMut};
 

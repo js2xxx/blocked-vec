@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-
 #![no_std]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
@@ -9,7 +8,8 @@
 #![feature(maybe_uninit_slice)]
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_get)]
-#![cfg(feature = "std")]
+
+#[cfg(feature = "std")]
 extern crate std;
 
 extern crate alloc;
@@ -17,5 +17,4 @@ extern crate alloc;
 mod imp;
 mod io;
 
-pub use self::imp::BlockedVec;
-pub use self::io::*;
+pub use self::{imp::BlockedVec, io::*};
