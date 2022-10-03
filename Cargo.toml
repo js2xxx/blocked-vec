@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 name = "blocked-vec"
 repository = "https://github.com/js2xxx/blocked-vec"
 version = "0.1.0"
-keywords = ["stream", "io", "data structures", "no-std"]
+keywords = ["stream", "io", "data-structures", "no-std"]
 
 [features]
 default = ["std"]
