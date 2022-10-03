@@ -4,7 +4,7 @@
 #![feature(allocator_api)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(int_roundings)]
-#![feature(io_slice_advance)]
+#![cfg_attr(feature = "std", feature(io_slice_advance))]
 #![feature(maybe_uninit_slice)]
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_get)]

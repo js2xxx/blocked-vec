@@ -118,6 +118,7 @@ impl From<SeekFrom> for std::io::SeekFrom {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::SeekFrom> for SeekFrom {
     fn from(this: std::io::SeekFrom) -> Self {
         match this {
