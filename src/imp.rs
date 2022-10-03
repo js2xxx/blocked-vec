@@ -1,6 +1,5 @@
-use core::{alloc::Layout, cmp, mem};
-
 use alloc::{vec, vec::Vec};
+use core::{alloc::Layout, cmp, mem};
 
 use crate::{IoSlice, IoSliceMut, SeekFrom};
 
@@ -259,6 +258,9 @@ impl Seeker {
     }
 }
 
+/// A vector of blocks.
+///
+/// See the [module documentation](crate) for details.
 #[derive(Debug)]
 pub struct BlockedVec {
     blocks: Vec<Block>,
@@ -268,6 +270,11 @@ pub struct BlockedVec {
 }
 
 impl BlockedVec {
+    /// Creates a new [`BlockedVec`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the queried page size cannot be made into a layout.
     #[cfg(feature = "std")]
     pub fn new() -> Self {
         let ps = page_size::get();
@@ -275,6 +282,7 @@ impl BlockedVec {
         Self::new_paged(layout)
     }
 
+    /// Creates a new [`BlockedVec`] with a given page layout.
     pub fn new_paged(page_layout: Layout) -> Self {
         BlockedVec {
             blocks: Vec::new(),
@@ -284,6 +292,12 @@ impl BlockedVec {
         }
     }
 
+    /// Creates a new [`BlockedVec`] with an initial length, with the cursor
+    /// placed at the front.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the queried page size cannot be made into a layout.
     #[cfg(feature = "std")]
     pub fn with_len(len: usize) -> Self {
         let ps = page_size::get();
@@ -291,6 +305,8 @@ impl BlockedVec {
         Self::with_len_paged(len, layout)
     }
 
+    /// Creates a new [`BlockedVec`] with a given page layout and an initial
+    /// length, with the cursor placed at the front.
     pub fn with_len_paged(len: usize, page_layout: Layout) -> Self {
         match Block::with_len(page_layout, len) {
             Some(block) => BlockedVec {
@@ -303,10 +319,12 @@ impl BlockedVec {
         }
     }
 
+    /// Returns the length of this [`BlockedVec`].
     pub fn len(&self) -> usize {
         self.len
     }
 
+    /// Checks if this [`BlockedVec`] is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len == 0
@@ -362,6 +380,12 @@ impl BlockedVec {
         }
     }
 
+    /// Extend the `BlockedVec`, with the possible additional areas filled with
+    /// zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the seeker or blocks are inconsistent.
     pub fn extend(&mut self, additional: usize) {
         match &mut self.seeker {
             Some(seeker) => {
@@ -389,15 +413,30 @@ impl BlockedVec {
         }
     }
 
-    pub fn append_vectored(&mut self, mut buf: &mut [impl IoSlice]) -> Option<usize> {
-        self.seek(SeekFrom::End(0))?;
-        Some(self.append_inner(&mut buf))
+    /// Append a bunch of buffers to the `BlockedVec`.
+    ///
+    /// # Returns
+    ///
+    /// The actual length of the buffers appended.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the seeker is inconsistent.
+    pub fn append_vectored(&mut self, mut buf: &mut [impl IoSlice]) -> usize {
+        self.seek(SeekFrom::End(0)).expect("Inconsistent seeker");
+        self.append_inner(&mut buf)
     }
 
-    pub fn append(&mut self, buf: &[u8]) -> Option<usize> {
+    /// Append a buffer to the `BlockedVec`.
+    ///
+    /// # Returns
+    ///
+    /// The actual length of the buffer appended.
+    pub fn append(&mut self, buf: &[u8]) -> usize {
         self.append_vectored(&mut [buf])
     }
 
+    /// Like `read`, except that it reads into a slice of buffers.
     pub fn read_vectored(&mut self, buf: &mut [impl IoSliceMut]) -> usize {
         let seeker = match &mut self.seeker {
             Some(seeker) => seeker,
@@ -409,6 +448,7 @@ impl BlockedVec {
         }
     }
 
+    /// Like `read_at`, except that it reads into a slice of buffers.
     pub fn read_at_vectored(&mut self, pos: usize, buf: &mut [impl IoSliceMut]) -> usize {
         let mut seeker = match self.seeker {
             Some(mut seeker) => match seeker.seek_from_start(pos, &self.blocks) {
@@ -423,16 +463,23 @@ impl BlockedVec {
         }
     }
 
+    /// Pull some bytes from this [`BlockedVec`] into the specified buffer,
+    /// returning how many bytes were read.
     #[inline]
     pub fn read(&mut self, buf: &mut [u8]) -> usize {
         self.read_vectored(&mut [buf])
     }
 
+    /// Pull some bytes from this [`BlockedVec`] into the specified buffer at a
+    /// specified position, returning how many bytes were read.
     #[inline]
     pub fn read_at(&mut self, pos: usize, buf: &mut [u8]) -> usize {
         self.read_at_vectored(pos, &mut [buf])
     }
 
+    /// Like [`write`], except that it writes from a slice of buffers.
+    ///
+    /// [`write`]: BlockedVec::write
     pub fn write_vectored(&mut self, mut buf: &mut [impl IoSlice]) -> usize {
         let seeker = match &mut self.seeker {
             Some(seeker) => seeker,
@@ -444,6 +491,9 @@ impl BlockedVec {
         }
     }
 
+    /// Like [`write_at`], except that it writes from a slice of buffers.
+    ///
+    /// [`write_at`]: BlockedVec::write_at
     pub fn write_at_vectored(&mut self, pos: usize, mut buf: &mut [impl IoSlice]) -> usize {
         let mut seeker = match self.seeker {
             Some(mut seeker) => match seeker.seek_from_start(pos, &self.blocks) {
@@ -458,16 +508,20 @@ impl BlockedVec {
         }
     }
 
+    /// Write a buffer into this writer, returning how many bytes were written.
     #[inline]
     pub fn write(&mut self, buf: &[u8]) -> usize {
         self.write_vectored(&mut [buf])
     }
 
+    /// Write a buffer into this writer at a specified position, returning how
+    /// many bytes were written.
     #[inline]
     pub fn write_at(&mut self, pos: usize, buf: &[u8]) -> usize {
         self.write_at_vectored(pos, &mut [buf])
     }
 
+    /// Seek to an offset, in bytes, in this [`BlockedVec`].
     pub fn seek(&mut self, pos: SeekFrom) -> Option<usize> {
         match &mut self.seeker {
             Some(seeker) => match pos {
@@ -482,9 +536,10 @@ impl BlockedVec {
         }
     }
 
-    pub fn truncate(&mut self, pos: usize) -> bool {
+    /// Shortens this `BlockedVec` to the specified length.
+    pub fn truncate(&mut self, len: usize) -> bool {
         match &mut self.seeker {
-            Some(seeker) => match seeker.truncate(pos, &self.blocks) {
+            Some(seeker) => match seeker.truncate(len, &self.blocks) {
                 Some((bi, pos_in_block)) => {
                     let bi = match self.blocks[bi].truncate(pos_in_block) {
                         Some(true) => bi,
@@ -493,24 +548,26 @@ impl BlockedVec {
                     if bi < self.blocks.len() {
                         self.blocks.truncate(bi);
                     }
-                    self.len = pos;
+                    self.len = len;
                     true
                 }
                 None => {
-                    self.len = pos;
-                    seeker.end_pos > pos
+                    self.len = len;
+                    seeker.end_pos > len
                 }
             },
             None => false,
         }
     }
 
-    pub fn resize(&mut self, len: usize) {
-        if self.len < len {
-            let extra = len - self.len;
+    /// Resizes the `BlockedVec` in-place so that `len` is equal to `new_len`,
+    /// with the possible additional area filled with zero.
+    pub fn resize(&mut self, new_len: usize) {
+        if self.len < new_len {
+            let extra = new_len - self.len;
             self.extend(extra)
         } else {
-            self.truncate(len);
+            self.truncate(new_len);
         }
     }
 }
@@ -572,7 +629,7 @@ mod tests {
     fn test_inner() -> Option<()> {
         let layout = Layout::new::<[u8; 4]>();
         let mut vec = BlockedVec::new_paged(layout);
-        vec.append(&[1, 2, 3, 4, 5])?;
+        vec.append(&[1, 2, 3, 4, 5]);
         vec.seek(SeekFrom::Start(3))?;
         vec.write_all(&[6, 7, 8, 9, 10]).unwrap();
         vec.seek(SeekFrom::End(-3))?;
@@ -585,7 +642,7 @@ mod tests {
         vec.resize(6);
         vec.seek(SeekFrom::Current(-3))?;
         vec.resize(12);
-        vec.append(&[26, 27, 28, 29, 30])?;
+        vec.append(&[26, 27, 28, 29, 30]);
 
         vec.rewind().unwrap();
         let mut buf = [0; 17];
