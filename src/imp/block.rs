@@ -17,6 +17,11 @@ pub struct Block {
     len: usize,
 }
 
+// SAFETY: blocks share the same rights as `Box<[u8]>`.
+unsafe impl Send for Block {}
+// SAFETY: blocks share the same rights as `Box<[u8]>`.
+unsafe impl Sync for Block {}
+
 impl fmt::Debug for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
