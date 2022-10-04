@@ -656,7 +656,9 @@ impl BlockedVec {
         match range.end_bound() {
             Bound::Included(&bound) => end.seek_bound(bound, &self.blocks),
             Bound::Excluded(&bound) => end.seek_bound(bound - 1, &self.blocks),
-            Bound::Unbounded => {}
+            Bound::Unbounded => {
+                let _ = end.seek_from_end(-1, &self.blocks);
+            }
         }
 
         RangeIter {
@@ -716,7 +718,9 @@ impl BlockedVec {
         match range.end_bound() {
             Bound::Included(&bound) => end.seek_bound(bound, &self.blocks),
             Bound::Excluded(&bound) => end.seek_bound(bound - 1, &self.blocks),
-            Bound::Unbounded => {}
+            Bound::Unbounded => {
+                let _ = end.seek_from_end(-1, &self.blocks);
+            }
         }
         RangeIterMut {
             start_block: start.current_block,
