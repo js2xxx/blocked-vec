@@ -4,6 +4,7 @@ use core::{
     cmp,
     iter::FusedIterator,
     mem::{self, MaybeUninit},
+    ops::{Bound, RangeBounds},
     slice,
 };
 
@@ -22,7 +23,7 @@ struct Seeker {
 }
 
 impl Seeker {
-    fn with_len(len: usize) -> Seeker {
+    fn start(len: usize) -> Seeker {
         Seeker {
             current_block: 0,
             current_pos_in_block: 0,
@@ -191,6 +192,15 @@ impl Seeker {
         None
     }
 
+    fn seek_bound(&mut self, bound: usize, blocks: &[Block]) {
+        let mid = self.end_pos / 2;
+        if bound < mid {
+            self.seek_from_start(bound, blocks);
+        } else {
+            self.seek_from_end(-(self.end_pos.saturating_sub(bound) as isize), blocks);
+        }
+    }
+
     fn seek_from_end(&mut self, end: isize, blocks: &[Block]) -> Option<usize> {
         if end >= 0 {
             self.current_block = blocks.len();
@@ -318,8 +328,8 @@ impl BlockedVec {
             Some(block) => BlockedVec {
                 blocks: vec![block],
                 layout: page_layout,
-                len: 0,
-                seeker: Some(Seeker::with_len(len)),
+                len,
+                seeker: Some(Seeker::start(len)),
             },
             None => Self::new_paged(page_layout),
         }
@@ -373,7 +383,7 @@ impl BlockedVec {
             }
             None => match Block::from_buf(self.layout, 0, buf) {
                 Some((block, len)) => {
-                    let mut seeker = Seeker::with_len(block.len());
+                    let mut seeker = Seeker::start(block.len());
                     seeker.current_block = 1;
                     seeker.current_pos = seeker.end_pos;
                     self.seeker = Some(seeker);
@@ -598,6 +608,124 @@ impl BlockedVec {
     pub fn bytes(&self) -> impl Iterator<Item = u8> + Clone + core::fmt::Debug + '_ {
         self.iter().flatten().copied()
     }
+
+    /// Returns the iterator of blocks (i.e. byte slices) in a selected range.
+    ///
+    /// The possible blocks parts that are out of range are not returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::alloc::Layout;
+    /// use blocked_vec::BlockedVec;
+    ///
+    /// let layout = Layout::new::<[u8; 4]>();
+    /// // Allocated 4 pages at one time, thus continuous.
+    /// let vec = BlockedVec::with_len_paged(16, layout);
+    /// let mut range = vec.range(7..14);
+    /// assert_eq!(range.next(), Some(&[0u8; 7] as &[u8]));
+    /// assert_eq!(range.next(), None);
+    ///
+    /// // Allocated 4 pages independently, thus discrete.
+    /// let mut vec = BlockedVec::with_len_paged(4, layout);
+    /// vec.append(&[1; 4]);
+    /// vec.append(&[2; 4]);
+    /// vec.append(&[3; 4]);
+    ///
+    /// let mut range = vec.range(7..14);
+    /// assert_eq!(range.next(), Some(&[1u8; 1] as &[u8]));
+    /// assert_eq!(range.next(), Some(&[2u8; 4] as &[u8]));
+    /// assert_eq!(range.next(), Some(&[3u8; 2] as &[u8]));
+    /// assert_eq!(range.next(), None);
+    /// ```
+    pub fn range<R>(&self, range: R) -> RangeIter<'_>
+    where
+        R: RangeBounds<usize>,
+    {
+        let mut start = match self.seeker {
+            Some(_) => Seeker::start(self.len),
+            None => return RangeIter::end(),
+        };
+        match range.start_bound() {
+            Bound::Included(&bound) => start.seek_bound(bound, &self.blocks),
+            Bound::Excluded(&bound) => start.seek_bound(bound + 1, &self.blocks),
+            Bound::Unbounded => {}
+        }
+
+        let mut end = start;
+        match range.end_bound() {
+            Bound::Included(&bound) => end.seek_bound(bound, &self.blocks),
+            Bound::Excluded(&bound) => end.seek_bound(bound - 1, &self.blocks),
+            Bound::Unbounded => {}
+        }
+
+        RangeIter {
+            start_block: start.current_block,
+            start_offset: start.current_pos_in_block,
+            end_block: end.current_block,
+            end_offset: end.current_pos_in_block,
+            blocks: &self.blocks[start.current_block..],
+        }
+    }
+
+    /// Returns the mutable iterator of blocks (i.e. byte slices) in a selected
+    /// range.
+    ///
+    /// The possible blocks parts that are out of range are not returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::alloc::Layout;
+    /// use blocked_vec::BlockedVec;
+    ///
+    /// let layout = Layout::new::<[u8; 4]>();
+    /// // Allocated 4 pages at one time, thus continuous.
+    /// let mut vec = BlockedVec::with_len_paged(16, layout);
+    /// let mut range = vec.range_mut(7..14);
+    /// assert_eq!(range.next(), Some(&mut [0u8; 7] as &mut [u8]));
+    /// assert_eq!(range.next(), None);
+    ///
+    /// // Allocated 4 pages independently, thus discrete.
+    /// let mut vec = BlockedVec::with_len_paged(4, layout);
+    /// vec.append(&[1; 4]);
+    /// vec.append(&[2; 4]);
+    /// vec.append(&[3; 4]);
+    ///
+    /// let mut range = vec.range_mut(7..14);
+    /// assert_eq!(range.next(), Some(&mut [1u8; 1] as &mut [u8]));
+    /// assert_eq!(range.next(), Some(&mut [2u8; 4] as &mut [u8]));
+    /// assert_eq!(range.next(), Some(&mut [3u8; 2] as &mut [u8]));
+    /// assert_eq!(range.next(), None);
+    /// ```
+    pub fn range_mut<R>(&mut self, range: R) -> RangeIterMut<'_>
+    where
+        R: RangeBounds<usize>,
+    {
+        let mut start = match self.seeker {
+            Some(_) => Seeker::start(self.len),
+            None => return RangeIterMut::end(),
+        };
+        match range.start_bound() {
+            Bound::Included(&bound) => start.seek_bound(bound, &self.blocks),
+            Bound::Excluded(&bound) => start.seek_bound(bound + 1, &self.blocks),
+            Bound::Unbounded => {}
+        }
+
+        let mut end = start;
+        match range.end_bound() {
+            Bound::Included(&bound) => end.seek_bound(bound, &self.blocks),
+            Bound::Excluded(&bound) => end.seek_bound(bound - 1, &self.blocks),
+            Bound::Unbounded => {}
+        }
+        RangeIterMut {
+            start_block: start.current_block,
+            start_offset: start.current_pos_in_block,
+            end_block: end.current_block,
+            end_offset: end.current_pos_in_block,
+            blocks: self.blocks[start.current_block..].iter_mut(),
+        }
+    }
 }
 
 #[cfg(feature = "std")]
@@ -693,6 +821,117 @@ impl<'a> Iterator for BlockIterMut<'a> {
 impl ExactSizeIterator for BlockIterMut<'_> {}
 
 impl FusedIterator for BlockIterMut<'_> {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RangeIter<'a> {
+    start_block: usize,
+    start_offset: usize,
+    end_block: usize,
+    end_offset: usize,
+    blocks: &'a [Block],
+}
+
+impl<'a> RangeIter<'a> {
+    #[inline]
+    fn end() -> Self {
+        RangeIter {
+            start_block: 0,
+            start_offset: 0,
+            end_block: 0,
+            end_offset: 0,
+            blocks: &[],
+        }
+    }
+}
+
+impl<'a> Iterator for RangeIter<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start_block > self.end_block
+            || (self.start_block == self.end_block && self.start_offset >= self.end_offset)
+        {
+            return None;
+        }
+
+        let (block, next) = self.blocks.split_first()?;
+        let ret = if self.start_block < self.end_block {
+            &block.as_slice()[self.start_offset..]
+        } else {
+            &block.as_slice()[self.start_offset..=self.end_offset]
+        };
+        self.blocks = next;
+        self.start_block += 1;
+        self.start_offset = 0;
+
+        // SAFETY: bytes are always valid.
+        Some(unsafe { MaybeUninit::slice_assume_init_ref(ret) })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            (self.end_block - self.start_block).saturating_sub(1),
+            Some(self.end_block - self.start_block),
+        )
+    }
+}
+
+impl FusedIterator for RangeIter<'_> {}
+
+#[derive(Debug)]
+pub struct RangeIterMut<'a> {
+    start_block: usize,
+    start_offset: usize,
+    end_block: usize,
+    end_offset: usize,
+    blocks: slice::IterMut<'a, Block>,
+}
+
+impl<'a> RangeIterMut<'a> {
+    #[inline]
+    fn end() -> Self {
+        RangeIterMut {
+            start_block: 0,
+            start_offset: 0,
+            end_block: 0,
+            end_offset: 0,
+            blocks: [].iter_mut(),
+        }
+    }
+}
+
+impl<'a> Iterator for RangeIterMut<'a> {
+    type Item = &'a mut [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start_block > self.end_block
+            || (self.start_block == self.end_block && self.start_offset >= self.end_offset)
+        {
+            return None;
+        }
+
+        let block = self.blocks.next()?;
+        let ret = if self.start_block < self.end_block {
+            &mut block.as_mut_slice()[self.start_offset..]
+        } else {
+            &mut block.as_mut_slice()[self.start_offset..=self.end_offset]
+        };
+        self.start_block += 1;
+        self.start_offset = 0;
+
+        // SAFETY: bytes are always valid.
+        Some(unsafe { MaybeUninit::slice_assume_init_mut(ret) })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            (self.end_block - self.start_block).saturating_sub(1),
+            Some(self.end_block - self.start_block),
+        )
+    }
+}
+
+impl FusedIterator for RangeIterMut<'_> {}
 
 #[cfg(test)]
 mod tests {

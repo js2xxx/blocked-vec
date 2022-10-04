@@ -37,7 +37,7 @@ impl Drop for Block {
 
 impl Block {
     pub fn with_len(layout: Layout, len: usize) -> Option<Self> {
-        let count = len.div_ceil(layout.align());
+        let count = len.div_ceil(layout.pad_to_align().size());
         NonZeroUsize::new(count).map(|count| {
             let (layout, _) = layout.repeat(count.get()).expect("Invalid layout");
             Block {
