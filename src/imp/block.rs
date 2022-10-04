@@ -138,10 +138,10 @@ impl Block {
         let capacity = self.capacity();
         let mut written_len = 0;
 
-        let len = (capacity - self.len).min(skip);
-        self.spare_capacity_mut()[..len].fill(MaybeUninit::new(0));
-        self.len += len;
-        written_len += len;
+        let actual_skip = (capacity - self.len).min(skip);
+        self.spare_capacity_mut()[..actual_skip].fill(MaybeUninit::new(0));
+        self.len += actual_skip;
+        written_len += actual_skip;
 
         for buf in buf.iter_mut() {
             let len = (capacity - self.len).min(buf.len());
@@ -153,8 +153,8 @@ impl Block {
             self.len += len;
             written_len += len;
         }
-        IoSlice::advance_slices(buf, written_len - skip);
-        if self.len == capacity && !buf.is_empty() && !buf[0].is_empty() {
+        IoSlice::advance_slices(buf, written_len - actual_skip);
+        if self.len == capacity && ((!buf.is_empty() && !buf[0].is_empty()) || skip > actual_skip) {
             Err(written_len)
         } else {
             Ok(written_len)

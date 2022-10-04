@@ -82,7 +82,7 @@ impl Seeker {
         if self.current_pos == self.end_pos {
             self.current_pos += block.len();
             self.current_block += 1;
-            self.current_pos_in_block = block.len();
+            self.current_pos_in_block = 0;
         }
         self.end_pos += block.len();
     }
@@ -960,6 +960,7 @@ mod tests {
         vec.seek(SeekFrom::Current(-3))?;
         vec.resize(12);
         vec.append(&[26, 27, 28, 29, 30]);
+        // std::eprintln!("{vec:?}");
 
         vec.rewind().unwrap();
         let mut buf = [0; 17];
