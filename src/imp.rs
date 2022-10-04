@@ -465,7 +465,7 @@ impl BlockedVec {
     }
 
     /// Like `read_at`, except that it reads into a slice of buffers.
-    pub fn read_at_vectored(&mut self, pos: usize, buf: &mut [impl IoSliceMut]) -> usize {
+    pub fn read_at_vectored(&self, pos: usize, buf: &mut [impl IoSliceMut]) -> usize {
         let mut seeker = match self.seeker {
             Some(mut seeker) => match seeker.seek_from_start(pos, &self.blocks) {
                 Some(_) => seeker,
@@ -489,7 +489,7 @@ impl BlockedVec {
     /// Pull some bytes from this [`BlockedVec`] into the specified buffer at a
     /// specified position, returning how many bytes were read.
     #[inline]
-    pub fn read_at(&mut self, pos: usize, buf: &mut [u8]) -> usize {
+    pub fn read_at(&self, pos: usize, buf: &mut [u8]) -> usize {
         self.read_at_vectored(pos, &mut [buf])
     }
 
