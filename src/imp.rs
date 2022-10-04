@@ -277,7 +277,7 @@ impl Seeker {
 /// A vector of blocks.
 ///
 /// See the [module documentation](crate) for details.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockedVec {
     blocks: Vec<Block>,
     layout: Layout,
@@ -973,7 +973,21 @@ mod tests {
     }
 
     #[test]
-    fn test() {
+    fn test_rw() {
         test_inner().expect("Failed to seek")
+    }
+
+    #[test]
+    fn test_clone() {
+        let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+        let layout = Layout::new::<[u8; 4]>();
+        let mut vec = BlockedVec::new_paged(layout);
+        vec.append(&data);
+
+        let cloned = vec.clone();
+        let mut buf = [0; 10];
+        cloned.read_at(0, &mut buf);
+        assert_eq!(buf, data);
     }
 }

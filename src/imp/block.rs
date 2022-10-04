@@ -1,7 +1,7 @@
 use alloc::alloc::Global;
 use core::{
     alloc::{Allocator, Layout},
-    fmt,
+    cmp, fmt,
     mem::{self, MaybeUninit},
     num::NonZeroUsize,
     ptr::NonNull,
@@ -32,6 +32,54 @@ impl fmt::Debug for Block {
 impl Drop for Block {
     fn drop(&mut self) {
         unsafe { Global.deallocate(self.ptr.as_non_null_ptr(), self.layout) };
+    }
+}
+
+impl Clone for Block {
+    fn clone(&self) -> Self {
+        let new = Global
+            .allocate_zeroed(self.layout)
+            .expect("Failed to allocate memory");
+        unsafe {
+            let src = self.ptr.as_ptr() as *const u8;
+            let dst = new.as_ptr() as *mut u8;
+            dst.copy_from_nonoverlapping(src, self.len);
+        }
+        Self {
+            ptr: new,
+            layout: self.layout,
+            len: self.len,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        unsafe {
+            match self.layout.size().cmp(&source.layout.size()) {
+                cmp::Ordering::Equal => {}
+                cmp::Ordering::Less => {
+                    self.ptr = Global
+                        .grow_zeroed(self.ptr.cast(), self.layout, source.layout)
+                        .expect("Failed to grow memory")
+                }
+                cmp::Ordering::Greater => {
+                    self.ptr = Global
+                        .shrink(self.ptr.cast(), self.layout, source.layout)
+                        .expect("Failed to shrink memory")
+                }
+            }
+
+            let src = source.ptr.as_ptr() as *const u8;
+            let dst = self.ptr.as_ptr() as *mut u8;
+            dst.copy_from_nonoverlapping(src, source.len);
+
+            if self.len < source.len {
+                let dst = dst.add(self.len);
+                dst.write_bytes(0, source.len - self.len);
+            }
+
+            self.len = source.len;
+            self.layout = source.layout
+        }
     }
 }
 
